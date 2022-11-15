@@ -1,6 +1,8 @@
 # Conway's Game of Life
 
-Visit the webapp [here]. Created using [Seed](https://seed-rs.org/).
+[![Github Pages](https://github.com/maygoo/conways-life/actions/workflows/pages.yml/badge.svg)](http://gh.maygoo.au/conways-life/)
+
+Visit the [webapp](http://gh.maygoo.au/conways-life/). Created using [Seed](https://seed-rs.org/).
 
 ## Compile
 
