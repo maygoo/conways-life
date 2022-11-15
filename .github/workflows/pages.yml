@@ -34,12 +34,15 @@ jobs:
       - name: Build with wasm-pack
         # add repository name as url directory for relative pathing for assets
         run: cargo make build_release --public-url=${{ github.event.repository.name }}
-      - name: Move index file to path
-        run: mv index.html pkg/index.html
+      - name: Shuffle files around
+        run: |
+          mkdir web \
+          mv pkg web \
+          mv index.html web\ \
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v1
         with:
-          path: ./pkg
+          path: ./web
 
   deploy:
     environment:
