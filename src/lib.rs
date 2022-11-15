@@ -10,15 +10,20 @@ fn init(_: Url, _: &mut impl Orders<Msg>) -> Model {
 
     let length = (universe_height / default_cell_dim) * (universe_width / default_cell_dim);
     let mut universe = vec![Cell::Dead; length as usize];
-    universe[9] = Cell::Live;
+    let pattern = [46, 65, 84, 99, 100, 101, 105, 106, 107, 122, 141, 160];
+    for i in pattern {
+        universe[i] = Cell::Live;
+    }
 
     let interval_ms = 200;
+    let influence_radius = 25;
 
     Model {
         universe,
         universe_dim: (universe_width, universe_height),
         cell_dim: default_cell_dim,
         show_grid: true,
+        influence_radius,
         show_influence: false,
         cursor: (0, 0),
         paused: true,
@@ -36,6 +41,7 @@ struct Model {
     cell_dim: i32,
     // settings
     show_grid: bool,
+    influence_radius: usize,
     show_influence: bool,
     cursor: Vec2,
     paused: bool,
@@ -80,6 +86,7 @@ enum Msg {
     InfluenceCell(usize),
     ClearUniverse,
     SetInterval(u32),
+    SetInflRadius(usize),
 }
 
 fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
@@ -133,13 +140,39 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
                 }
             }
 
-            model.universe = new_universe;
+            // if model is not paused, i.e. it is active, then enable the influence
+            if model.show_influence {
+                for (i, _) in model.universe.iter().enumerate() {
+                    if let Ok(cell_element) = format!("c{i}").get_element() {
+                        // get_bounding_client_rect is exposed to us by activating
+                        // `web-sys` features: ["DomRect", "Element"]
+                        let rect = cell_element.get_bounding_client_rect();
+                        
+                        // basic collision detection: check if cursor pos +
+                        // circle radius is within the square's 'radius' from
+                        // the square's centre
+                        let cell_radius = (rect.width()) / 2.;
+                        let cell_centre_x = cell_radius + rect.left();
+                        let cell_centre_y = cell_radius + rect.top(); // using horizontal 'radius' since rect is square
+                        
+                        let dx = cell_centre_x - model.cursor.0 as f64;
+                        let dy = cell_centre_y - model.cursor.1 as f64;
+                        let dist = (dx*dx + dy*dy).sqrt();
 
-            // if universe is empty then pause
-            if model.universe.iter().filter(|cell| cell.is_live()).count() < 1 {
-                model.paused = true;
-                model.interval_handle = None;
+                        if dist < (cell_radius + model.influence_radius as f64) {
+                            new_universe[i] = Cell::Live;
+                        }
+                    }
+                }
+            } else {
+                // if universe is empty while the influence is turned off, then pause
+                if model.universe.iter().filter(|cell| cell.is_live()).count() < 1 {
+                    model.paused = true;
+                    model.interval_handle = None;
+                }
             }
+
+            model.universe = new_universe;
         }
         Msg::Tick => (),
         // settings
@@ -169,7 +202,8 @@ fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
         Msg::SetInterval(ms) => {
             model.interval_ms = ms;
             model.interval_handle = Some(orders.stream_with_handle(streams::interval(model.interval_ms, || Msg::Tick)));
-        }
+        },
+        Msg::SetInflRadius(r) => model.influence_radius = r,
     }
 }
 
@@ -195,9 +229,19 @@ fn view(model: &Model) -> Node<Msg> {
         mouse_ev(Ev::MouseMove, |ev| Msg::MouseMove((ev.client_x(), ev.client_y()))),
         view_influence(model),
 
-        view_title(),
+        div![
+            style!{
+                St::Display => "flex",
+                St::JustifyContent => "left",
+                St::FlexDirection => "column"
+                St::MaxWidth => "50vw",
+                St::Padding => "1.5em",
+            },
 
-        view_settings(model),
+            view_title(),
+            view_instructions(),
+            view_settings(model),
+        ],
 
         view_universe(model),
     ]
@@ -206,7 +250,7 @@ fn view(model: &Model) -> Node<Msg> {
 fn view_title() -> Node<Msg> {
     div![
         style!{
-            St::Margin => "2.5em",
+            St::MarginBottom => "1.5em",
         },
         div![
             style!{
@@ -229,12 +273,24 @@ fn view_title() -> Node<Msg> {
     ]
 }
 
+fn view_instructions() -> Node<Msg> {
+    div![
+        style!{
+            St::MarginBottom => "1.5em",
+        },
+        section![
+            "This is page is an implementation of ",
+            a!(attrs!(At::Href => "https://en.wikipedia.org/wiki/Conway%27s_Game_of_Life"), "Conway's Game of Life"),
+            ". While the game is paused you can paint over the cells to create the starting pattern. Additionally, toggle the influence setting to use your cursor to bring life to the cells you touch while the simulation is running."
+        ],
+    ]
+}
+
 fn view_influence(model: &Model) -> Option<Node<Msg>> {
     let left = format!("{}px", model.cursor.0);
     let top = format!("{}px", model.cursor.1);
 
-    let height = "50px";
-    let width = "50px";
+    let sq_dim = format!("{}px", model.influence_radius*2);
 
     IF!(model.show_influence => {
         div![
@@ -252,8 +308,9 @@ fn view_influence(model: &Model) -> Option<Node<Msg>> {
                 St::MixBlendMode => "difference",
                 St::ZIndex => "10000",
                 St::Border => "2px solid green",
-                St::Height => height,
-                St::Width => width,
+                St::Height => sq_dim,
+                St::Width => sq_dim,
+                St::UserSelect => "none",
             },
         ]
     })
@@ -262,10 +319,14 @@ fn view_influence(model: &Model) -> Option<Node<Msg>> {
 fn view_settings(model: &Model) -> Node<Msg> {
     div![
         style!{
-            St::Margin => "2em",
-            St::JustifyContent => "left",
+            St::MarginBottom => "1.5em",
+            St::Display => "flex",
+            St::FlexWrap => "wrap",
+            St::Gap => "1em",
+            St::AlignItems => "center",
         },
 
+        // select cell size
         div![
             style!{
                 St::Display => "flex",
@@ -311,17 +372,17 @@ fn view_settings(model: &Model) -> Node<Msg> {
             ],
             label!("50"),
         ],
-        br!(),
-
+        
+        // select universe interval
         div![
             style!{
-                St::MarginBottom => "0.5em",
                 St::Display => "flex",
-                St::JustifyContent => "center",
+                St::JustifyContent => "left",
+                St::AlignItems => "center",
             },
 
             label![
-                style!(St::MarginRight => "1em"),
+                style!(St::MarginRight => "0.5em"),
                 attrs!(At::For => "interval"),
                 "Universe interval (",
                 model.interval_ms.to_string(),
@@ -337,43 +398,55 @@ fn view_settings(model: &Model) -> Node<Msg> {
                 input_ev(Ev::Input, |e| Msg::SetInterval(e.parse().unwrap()))
             ]
         ],
-        
-        div![
-            style!{
-                St::Display => "flex",
-                St::AlignItems => "center",
-            },
-            "Click cells while paused.",
-            button![
-                style!(St::MarginLeft => "1em"),
-                if model.paused { "Play" } else { "Pause" },
-                ev(Ev::Click, |_| Msg::TogglePause),
-            ],
-            button![
-                style!(St::MarginLeft => "1em"),
-                "Clear",
-                ev(Ev::Click, |_| Msg::ClearUniverse),
-            ],
-        ],
-        br!(),
-        
-        input![
-            attrs!{
-                At::Type => "checkbox",
-                At::Checked => model.show_grid.as_at_value(),
-            },
-            ev(Ev::Click, |_| Msg::ToggleGrid),
-        ],
-        label!("Show grid", ev(Ev::Click, |_| Msg::ToggleGrid)),
 
-        input![
-            attrs!{
-                At::Type => "checkbox",
-                At::Checked => model.show_influence.as_at_value(),
-            },
-            ev(Ev::Click, |_| Msg::ToggleInfl),
+        // toggle influence
+        div![
+            input![
+                attrs!{
+                    At::Type => "checkbox",
+                    At::Checked => model.show_influence.as_at_value(),
+                },
+                ev(Ev::Click, |_| Msg::ToggleInfl),
+            ],
+            label![
+                if model.show_influence { "Influence radius" } else { "Influence" },
+                ev(Ev::Click, |_| Msg::ToggleInfl),
+            ],
+            IF!(model.show_influence => style!(St::Display => "flex")),
+            IF!(model.show_influence => {
+                input![
+                    style!(St::MarginLeft => "0.5em"),
+                    attrs!{
+                        At::Type => "range",
+                        At::Min => "25",
+                        At::Max => "100",
+                    },
+                    input_ev(Ev::Input, |e| Msg::SetInflRadius(e.parse().unwrap())),
+                ]
+            }),
         ],
-        label!("Show influence", ev(Ev::Click, |_| Msg::ToggleInfl)),
+
+        // toggle grid
+        div![
+            input![
+                attrs!{
+                    At::Type => "checkbox",
+                    At::Checked => model.show_grid.as_at_value(),
+                },
+                ev(Ev::Click, |_| Msg::ToggleGrid),
+            ],
+            label!("Grid", ev(Ev::Click, |_| Msg::ToggleGrid)),
+        ],
+
+        // pause and clear buttons
+        button![
+            if model.paused { "Play" } else { "Pause" },
+            ev(Ev::Click, |_| Msg::TogglePause),
+        ],
+        button![
+            "Clear",
+            ev(Ev::Click, |_| Msg::ClearUniverse),
+        ],
     ]
 }
 
@@ -398,6 +471,7 @@ fn view_universe(model: &Model) -> Node<Msg> {
 
         model.universe.iter().enumerate().map(|(i, cell)| {
             div![
+                attrs!(At::Id => format!("c{i}")),
                 style!{
                     St::Outline => if model.show_grid { "solid 1px black" } else { "" }
                     St::BackgroundColor => if cell == &Cell::Live { "black" } else { "white" },

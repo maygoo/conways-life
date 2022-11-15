@@ -17,6 +17,7 @@ wasm-bindgen-test = "0.3.18"
 
 [dependencies]
 seed = "0.8.0"
+web-sys = { version = "0.3", features = ["DomRect", "Element"]}
 
 [profile.release]
 lto = true
