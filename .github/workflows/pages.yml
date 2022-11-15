@@ -36,9 +36,9 @@ jobs:
         run: cargo make build_release --public-url=${{ github.event.repository.name }}
       - name: Shuffle files around
         run: |
-          mkdir web \
-          mv pkg web \
-          mv index.html web\ \
+          mkdir web && \
+          mv pkg web && \
+          mv index.html web
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v1
         with:
