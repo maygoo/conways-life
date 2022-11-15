@@ -1,7 +1,7 @@
 //#[allow(clippy::wildcard_imports)]
 use seed::{prelude::*, *};
 
-fn init(_: Url, orders: &mut impl Orders<Msg>) -> Model {
+fn init(_: Url, _: &mut impl Orders<Msg>) -> Model {
     // 50vh and vw would be ideal for it to be responsive
     // default values in px
     let universe_width = 950i32;
@@ -12,11 +12,10 @@ fn init(_: Url, orders: &mut impl Orders<Msg>) -> Model {
     let mut universe = vec![Cell::Dead; length as usize];
     universe[9] = Cell::Live;
 
-    let interval_ms = 100;
-    orders.stream(streams::interval(interval_ms, || Msg::Tick));
+    let interval_ms = 200;
 
     Model {
-        universe: universe,
+        universe,
         universe_dim: (universe_width, universe_height),
         cell_dim: default_cell_dim,
         show_grid: true,
@@ -24,6 +23,8 @@ fn init(_: Url, orders: &mut impl Orders<Msg>) -> Model {
         cursor: (0, 0),
         paused: true,
         mouse_down: false,
+        interval_ms,
+        interval_handle: None,
     }
 }
 
@@ -39,6 +40,8 @@ struct Model {
     cursor: Vec2,
     paused: bool,
     mouse_down: bool,
+    interval_ms: u32,
+    interval_handle: Option<StreamHandle>,
 }
 
 type Vec2 = (i32, i32);
@@ -75,9 +78,11 @@ enum Msg {
     TogglePause,
     MouseDown(bool),
     InfluenceCell(usize),
+    ClearUniverse,
+    SetInterval(u32),
 }
 
-fn update(msg: Msg, model: &mut Model, _: &mut impl Orders<Msg>) {
+fn update(msg: Msg, model: &mut Model, orders: &mut impl Orders<Msg>) {
     match msg {
         Msg::ClickCell(i) => model.universe[i].toggle(),
         Msg::InfluenceCell(i) => model.universe[i] = Cell::Live,
@@ -129,15 +134,30 @@ fn update(msg: Msg, model: &mut Model, _: &mut impl Orders<Msg>) {
             }
 
             model.universe = new_universe;
+
+            // if universe is empty then pause
+            if model.universe.iter().filter(|cell| cell.is_live()).count() < 1 {
+                model.paused = true;
+                model.interval_handle = None;
+            }
         }
         Msg::Tick => (),
         // settings
         Msg::MouseMove(pos) => model.cursor = pos,
         Msg::ToggleGrid => if model.show_grid { model.show_grid = false } else { model.show_grid = true },
         Msg::ToggleInfl => if model.show_influence { model.show_influence = false } else { model.show_influence = true },
-        Msg::TogglePause => if model.paused { model.paused = false } else { model.paused = true },
+        Msg::TogglePause => {
+            if model.paused {
+                model.paused = false;
+                model.interval_handle = Some(orders.stream_with_handle(streams::interval(model.interval_ms, || Msg::Tick)));
+            } else {
+                model.paused = true;
+                model.interval_handle = None; // stream cancelled when dropped
+            }
+        }
         Msg::ChangeRatio(dim) => {
             model.cell_dim = dim.parse().unwrap();
+            model.paused = true;
 
             let cols = model.universe_dim.0 / model.cell_dim;
             let rows = model.universe_dim.1 / model.cell_dim;
@@ -145,6 +165,11 @@ fn update(msg: Msg, model: &mut Model, _: &mut impl Orders<Msg>) {
         },
         Msg::MouseDown(true) => model.mouse_down = true,
         Msg::MouseDown(false) => model.mouse_down = false,
+        Msg::ClearUniverse => model.universe = model.universe.iter().map(|_| Cell::Dead).collect(),
+        Msg::SetInterval(ms) => {
+            model.interval_ms = ms;
+            model.interval_handle = Some(orders.stream_with_handle(streams::interval(model.interval_ms, || Msg::Tick)));
+        }
     }
 }
 
@@ -238,6 +263,7 @@ fn view_settings(model: &Model) -> Node<Msg> {
     div![
         style!{
             St::Margin => "2em",
+            St::JustifyContent => "left",
         },
 
         div![
@@ -286,6 +312,31 @@ fn view_settings(model: &Model) -> Node<Msg> {
             label!("50"),
         ],
         br!(),
+
+        div![
+            style!{
+                St::MarginBottom => "0.5em",
+                St::Display => "flex",
+                St::JustifyContent => "center",
+            },
+
+            label![
+                style!(St::MarginRight => "1em"),
+                attrs!(At::For => "interval"),
+                "Universe interval (",
+                model.interval_ms.to_string(),
+                "ms):",
+            ],
+            input![
+                attrs!{
+                    At::Type => "range",
+                    At::Min => "10",
+                    At::Max => "1000",
+                    At::For => "interval",
+                },
+                input_ev(Ev::Input, |e| Msg::SetInterval(e.parse().unwrap()))
+            ]
+        ],
         
         div![
             style!{
@@ -297,6 +348,11 @@ fn view_settings(model: &Model) -> Node<Msg> {
                 style!(St::MarginLeft => "1em"),
                 if model.paused { "Play" } else { "Pause" },
                 ev(Ev::Click, |_| Msg::TogglePause),
+            ],
+            button![
+                style!(St::MarginLeft => "1em"),
+                "Clear",
+                ev(Ev::Click, |_| Msg::ClearUniverse),
             ],
         ],
         br!(),
