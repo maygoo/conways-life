@@ -197,7 +197,7 @@ fn view_title() -> Node<Msg> {
         ],
         " framework. ",
         a![
-            attrs!(At::Href => "#"),
+            attrs!(At::Href => "https://github.com/maygoo/conways-life"),
             "View source",
         ],
         ".",
