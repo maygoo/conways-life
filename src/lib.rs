@@ -55,6 +55,10 @@ impl Cell {
             *self = Cell::Live
         }
     }
+
+    pub fn is_live(&self) -> bool {
+        self == &Cell::Live
+    }
 }
 
 //#[derive(Copy, Clone)]
@@ -89,26 +93,39 @@ fn update(msg: Msg, model: &mut Model, _: &mut impl Orders<Msg>) {
                 let (x, y) = rm_to_xy(i, cols as usize);
                 let mut live_neighbours = 0;
 
-                // check each neighbouring cell
-                if y > 0 && model.universe[(y-1) * cols + x] == Cell::Live { // up
+                // check each neighbouring cell including diagonals.
+                if y > 0 && model.universe[(y-1) * cols + x].is_live() { // up
                     live_neighbours += 1;
                 }
-                if y < rows - 1 && model.universe[(y+1) * cols + x] == Cell::Live { // down
+                if y < rows - 1 && model.universe[(y+1) * cols + x].is_live() { // down
                     live_neighbours += 1;
                 }
-                if x > 0 && model.universe[y * cols + x-1] == Cell::Live { // left
+                if x > 0 && model.universe[y * cols + x-1].is_live() { // left
                     live_neighbours += 1;
                 }
-                if x < cols - 1 && model.universe[y * cols + x+1] == Cell::Live { // right
+                if x < cols - 1 && model.universe[y * cols + x+1].is_live() { // right
+                    live_neighbours += 1;
+                }
+
+                if y > 0 && x > 0 && model.universe[(y-1) * cols + x-1].is_live() { // up-left
+                    live_neighbours += 1;
+                }
+                if y > 0 && x < cols - 1 && model.universe[(y-1) * cols + x+1].is_live() { // up-right
+                    live_neighbours += 1;
+                }
+                if y < rows - 1 && x > 0 && model.universe[(y+1) * cols + x-1].is_live() { // down-left
+                    live_neighbours += 1;
+                }
+                if y < rows - 1 && x < cols - 1 && model.universe[(y+1) * cols + x+1].is_live() { // down-right
                     live_neighbours += 1;
                 }
 
                 // implement conway's game of life rules
-                if cell == &Cell::Live && (live_neighbours < 2 || live_neighbours > 3) {
+                if cell.is_live() && (live_neighbours < 2 || live_neighbours > 3) {
                     // dies from over and under population
                     log!("Cell ", i, " dies.");
                     new_universe[i] = Cell::Dead;
-                } else if cell == &Cell::Dead && live_neighbours == 3 {
+                } else if !cell.is_live() && live_neighbours == 3 {
                     // new life!
                     log!("Cell ", i, " is born.");
                     new_universe[i] = Cell::Live;
