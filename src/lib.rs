@@ -12,7 +12,7 @@ fn init(_: Url, orders: &mut impl Orders<Msg>) -> Model {
     let mut universe = vec![Cell::Dead; length as usize];
     universe[9] = Cell::Live;
 
-    let interval_ms = 1000;
+    let interval_ms = 100;
     orders.stream(streams::interval(interval_ms, || Msg::Tick));
 
     Model {
@@ -23,6 +23,7 @@ fn init(_: Url, orders: &mut impl Orders<Msg>) -> Model {
         show_influence: false,
         cursor: (0, 0),
         paused: true,
+        mouse_down: false,
     }
 }
 
@@ -37,6 +38,7 @@ struct Model {
     show_influence: bool,
     cursor: Vec2,
     paused: bool,
+    mouse_down: bool,
 }
 
 type Vec2 = (i32, i32);
@@ -63,8 +65,6 @@ impl Cell {
 
 //#[derive(Copy, Clone)]
 enum Msg {
-    CursorHover,
-    CursorOff,
     ClickCell(usize),
     MouseMove(Vec2),
     Tick,
@@ -73,16 +73,14 @@ enum Msg {
     ToggleInfl,
     ChangeRatio(String),
     TogglePause,
+    MouseDown(bool),
+    InfluenceCell(usize),
 }
 
 fn update(msg: Msg, model: &mut Model, _: &mut impl Orders<Msg>) {
     match msg {
-        Msg::CursorHover => /* model.cell = Cell::Live */(),
-        Msg::CursorOff => /* model.cell = Cell::Dead */(),
-        Msg::ClickCell(i) => {
-            log!("clicked cell ", i);
-            if model.paused { model.universe[i].toggle(); }
-        }
+        Msg::ClickCell(i) => model.universe[i].toggle(),
+        Msg::InfluenceCell(i) => model.universe[i] = Cell::Live,
         Msg::Tick if !model.paused => {
             let cols = (model.universe_dim.0 / model.cell_dim) as usize;
             let rows = (model.universe_dim.1 / model.cell_dim) as usize;
@@ -123,11 +121,9 @@ fn update(msg: Msg, model: &mut Model, _: &mut impl Orders<Msg>) {
                 // implement conway's game of life rules
                 if cell.is_live() && (live_neighbours < 2 || live_neighbours > 3) {
                     // dies from over and under population
-                    log!("Cell ", i, " dies.");
                     new_universe[i] = Cell::Dead;
                 } else if !cell.is_live() && live_neighbours == 3 {
                     // new life!
-                    log!("Cell ", i, " is born.");
                     new_universe[i] = Cell::Live;
                 }
             }
@@ -147,6 +143,8 @@ fn update(msg: Msg, model: &mut Model, _: &mut impl Orders<Msg>) {
             let rows = model.universe_dim.1 / model.cell_dim;
             model.universe = vec![Cell::Dead; (rows * cols) as usize];
         },
+        Msg::MouseDown(true) => model.mouse_down = true,
+        Msg::MouseDown(false) => model.mouse_down = false,
     }
 }
 
@@ -350,9 +348,10 @@ fn view_universe(model: &Model) -> Node<Msg> {
                     St::Height => cell_dim_px,
                     St::Width => cell_dim_px,
                 },
-                ev(Ev::MouseEnter, |_| Msg::CursorHover),
-                ev(Ev::MouseLeave, |_| Msg::CursorOff),
-                ev(Ev::Click, move |_| Msg::ClickCell(i))
+                IF!(model.paused => ev(Ev::Click, move |_| Msg::ClickCell(i))),
+                IF!(model.paused && model.mouse_down => ev(Ev::MouseEnter, move |_| Msg::InfluenceCell(i))),
+                ev(Ev::MouseDown, |_| Msg::MouseDown(true)),
+                ev(Ev::MouseUp, |_| Msg::MouseDown(false)),
             ]
         })
     ]
